@@ -7,26 +7,43 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04  # Gunakan Ubuntu 20.04 untuk kompatibilitas JDK 8
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 11
+      - name: Set up JDK 8
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '11'
+          java-version: '8'
 
-      - name: Setup Gradle 7.5
-        uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 7.5
-
-      - name: Create Android project structure
+      - name: Create project structure
         run: |
           mkdir -p app/src/main/java/com/autohotspot
           mkdir -p app/src/main/res/values
+          mkdir -p gradle/wrapper
+
+      - name: Write gradle-wrapper.properties (Gradle 4.6)
+        run: |
+          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-4.6-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+      - name: Download gradle-wrapper.jar for 4.6
+        run: |
+          curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v4.6.0/gradle/wrapper/gradle-wrapper.jar
+
+      - name: Create gradlew
+        run: |
+          cat > gradlew << 'EOF'
+          #!/bin/sh
+          exec java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"
+          EOF
+          chmod +x gradlew
 
       - name: Write AndroidManifest.xml
         run: |
@@ -72,7 +89,7 @@ jobs:
                   if (!Settings.System.canWrite(this)) {
                       Toast.makeText(this, "Izin WRITE_SETTINGS diperlukan. Berikan secara manual di Pengaturan Aplikasi.", Toast.LENGTH_LONG).show();
                   } else {
-                      Toast.makeText(this, "Auto Hotspot aktif. Hotspot 'J2 Prime' tanpa password akan menyala saat booting.", Toast.LENGTH_SHORT).show();
+                      Toast.makeText(this, "Auto Hotspot 'J2 Prime' tanpa password aktif saat booting.", Toast.LENGTH_SHORT).show();
                   }
                   finish();
               }
@@ -96,7 +113,7 @@ jobs:
           }
           EOF
 
-      - name: Write HotspotHelper.java (SSID: J2 Prime, no password, band 2.4GHz)
+      - name: Write HotspotHelper.java
         run: |
           cat > app/src/main/java/com/autohotspot/HotspotHelper.java << 'EOF'
           package com.autohotspot;
@@ -115,10 +132,7 @@ jobs:
                       }
                       WifiConfiguration netConfig = new WifiConfiguration();
                       netConfig.SSID = "J2 Prime";
-                      // Tanpa password (open network)
                       netConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.NONE);
-                      // Secara default, Android 6.0 menggunakan band 2.4 GHz (pita 1)
-                      // Jika ingin memaksa channel 1, bisa ditambahkan (tapi tidak diperlukan)
                       Method method = wifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
                       method.invoke(wifiManager, netConfig, true);
                       Log.d("HotspotHelper", "Hotspot 'J2 Prime' (open) turned on");
@@ -135,6 +149,7 @@ jobs:
           apply plugin: 'com.android.application'
           android {
               compileSdk 23
+              buildToolsVersion "23.0.3"
               defaultConfig {
                   applicationId "com.autohotspot"
                   minSdk 23
@@ -149,7 +164,7 @@ jobs:
               }
           }
           dependencies {
-              implementation 'androidx.appcompat:appcompat:1.0.0'
+              implementation 'com.android.support:appcompat-v7:23.4.0'
           }
           EOF
 
@@ -159,16 +174,16 @@ jobs:
           buildscript {
               repositories {
                   google()
-                  mavenCentral()
+                  jcenter()
               }
               dependencies {
-                  classpath 'com.android.tools.build:gradle:7.4.2'
+                  classpath 'com.android.tools.build:gradle:3.0.1'
               }
           }
           allprojects {
               repositories {
                   google()
-                  mavenCentral()
+                  jcenter()
               }
           }
           EOF
@@ -177,7 +192,8 @@ jobs:
         run: |
           cat > gradle.properties << 'EOF'
           org.gradle.jvmargs=-Xmx1536m
-          android.useAndroidX=true
+          android.useAndroidX=false
+          android.enableJetifier=false
           EOF
 
       - name: Write settings.gradle
