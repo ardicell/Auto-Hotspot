@@ -12,46 +12,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '11'
 
       - name: Create Android project structure
         run: |
           mkdir -p app/src/main/java/com/autohotspot
           mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/drawable
-          mkdir -p app/src/main/res/layout
+          mkdir -p gradle/wrapper
 
       - name: Write AndroidManifest.xml
         run: |
           cat > app/src/main/AndroidManifest.xml << 'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.autohotspot">
-
               <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
               <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
               <uses-permission android:name="android.permission.WRITE_SETTINGS" />
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
               <application
                   android:allowBackup="true"
                   android:icon="@android:drawable/ic_dialog_info"
                   android:label="Auto Hotspot"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  
-                  <activity android:name=".MainActivity"
-                      android:exported="true">
+                  <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity>
-
-                  <receiver android:name=".BootReceiver"
-                      android:exported="true">
+                  <receiver android:name=".BootReceiver" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.BOOT_COMPLETED" />
                       </intent-filter>
@@ -64,12 +57,10 @@ jobs:
         run: |
           cat > app/src/main/java/com/autohotspot/MainActivity.java << 'EOF'
           package com.autohotspot;
-
           import android.app.Activity;
           import android.os.Bundle;
           import android.provider.Settings;
           import android.widget.Toast;
-
           public class MainActivity extends Activity {
               @Override
               protected void onCreate(Bundle savedInstanceState) {
@@ -88,12 +79,9 @@ jobs:
         run: |
           cat > app/src/main/java/com/autohotspot/BootReceiver.java << 'EOF'
           package com.autohotspot;
-
           import android.content.BroadcastReceiver;
           import android.content.Context;
           import android.content.Intent;
-          import android.util.Log;
-
           public class BootReceiver extends BroadcastReceiver {
               @Override
               public void onReceive(Context context, Intent intent) {
@@ -108,13 +96,11 @@ jobs:
         run: |
           cat > app/src/main/java/com/autohotspot/HotspotHelper.java << 'EOF'
           package com.autohotspot;
-
           import android.content.Context;
           import android.net.wifi.WifiConfiguration;
           import android.net.wifi.WifiManager;
           import android.util.Log;
           import java.lang.reflect.Method;
-
           public class HotspotHelper {
               public static void turnOnHotspot(Context context) {
                   try {
@@ -196,9 +182,20 @@ jobs:
           echo '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">Auto Hotspot</string></resources>' > app/src/main/res/values/strings.xml
           echo '<?xml version="1.0" encoding="utf-8"?><resources><color name="black">#000000</color></resources>' > app/src/main/res/values/colors.xml
 
-      - name: Set up Gradle Wrapper
+      - name: Setup Gradle Wrapper manually
         run: |
-          gradle wrapper --gradle-version 7.5 --distribution-type bin
+          cat > gradle/wrapper/gradle-wrapper.properties << 'EOF'
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-7.5-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          curl -L -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v7.5.0/gradle/wrapper/gradle-wrapper.jar
+          cat > gradlew << 'EOF'
+          #!/bin/sh
+          exec java -cp gradle/wrapper/gradle-wrapper.jar org.gradle.wrapper.GradleWrapperMain "$@"
+          EOF
           chmod +x gradlew
 
       - name: Build APK
