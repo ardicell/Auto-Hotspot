@@ -1,0 +1,211 @@
+name: Build Auto Hotspot APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Create Android project structure
+        run: |
+          mkdir -p app/src/main/java/com/autohotspot
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/layout
+
+      - name: Write AndroidManifest.xml
+        run: |
+          cat > app/src/main/AndroidManifest.xml << 'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.autohotspot">
+
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@android:drawable/ic_dialog_info"
+                  android:label="Auto Hotspot"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <receiver android:name=".BootReceiver"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          EOF
+
+      - name: Write MainActivity.java
+        run: |
+          cat > app/src/main/java/com/autohotspot/MainActivity.java << 'EOF'
+          package com.autohotspot;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (!Settings.System.canWrite(this)) {
+                      Toast.makeText(this, "Izin WRITE_SETTINGS diperlukan. Berikan secara manual di Pengaturan Aplikasi.", Toast.LENGTH_LONG).show();
+                  } else {
+                      Toast.makeText(this, "Auto Hotspot aktif. Hotspot akan menyala saat booting.", Toast.LENGTH_SHORT).show();
+                  }
+                  finish();
+              }
+          }
+          EOF
+
+      - name: Write BootReceiver.java
+        run: |
+          cat > app/src/main/java/com/autohotspot/BootReceiver.java << 'EOF'
+          package com.autohotspot;
+
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          android.content.Intent;
+          import android.util.Log;
+
+          public class BootReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context context, Intent intent) {
+                  if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+                      HotspotHelper.turnOnHotspot(context);
+                  }
+              }
+          }
+          EOF
+
+      - name: Write HotspotHelper.java
+        run: |
+          cat > app/src/main/java/com/autohotspot/HotspotHelper.java << 'EOF'
+          package com.autohotspot;
+
+          import android.content.Context;
+          import android.net.wifi.WifiConfiguration;
+          import android.net.wifi.WifiManager;
+          import android.util.Log;
+          import java.lang.reflect.Method;
+
+          public class HotspotHelper {
+              public static void turnOnHotspot(Context context) {
+                  try {
+                      WifiManager wifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+                      if (wifiManager.isWifiEnabled()) {
+                          wifiManager.setWifiEnabled(false);
+                          Thread.sleep(1000);
+                      }
+                      WifiConfiguration netConfig = new WifiConfiguration();
+                      netConfig.SSID = "AutoHotspot";
+                      netConfig.preSharedKey = "12345678";
+                      netConfig.allowedKeyManagement.set(WifiConfiguration.KeyMgmt.WPA2_PSK);
+                      Method method = wifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
+                      method.invoke(wifiManager, netConfig, true);
+                      Log.d("HotspotHelper", "Hotspot turned on");
+                  } catch (Exception e) {
+                      Log.e("HotspotHelper", "Error: " + e.getMessage());
+                  }
+              }
+          }
+          EOF
+
+      - name: Write build.gradle (app level)
+        run: |
+          cat > app/build.gradle << 'EOF'
+          apply plugin: 'com.android.application'
+          android {
+              compileSdk 23
+              defaultConfig {
+                  applicationId "com.autohotspot"
+                  minSdk 23
+                  targetSdk 23
+                  versionCode 1
+                  versionName "1.0"
+              }
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.0.0'
+          }
+          EOF
+
+      - name: Write top-level build.gradle
+        run: |
+          cat > build.gradle << 'EOF'
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+      - name: Write gradle.properties
+        run: |
+          cat > gradle.properties << 'EOF'
+          org.gradle.jvmargs=-Xmx1536m
+          android.useAndroidX=true
+          EOF
+
+      - name: Write settings.gradle
+        run: echo "include ':app'" > settings.gradle
+
+      - name: Create dummy resources
+        run: |
+          echo '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">Auto Hotspot</string></resources>' > app/src/main/res/values/strings.xml
+          echo '<?xml version="1.0" encoding="utf-8"?><resources><color name="black">#000000</color></resources>' > app/src/main/res/values/colors.xml
+
+      - name: Set up Gradle Wrapper
+        run: |
+          gradle wrapper --gradle-version 7.4.2
+          chmod +x gradlew
+
+      - name: Build APK
+        run: ./gradlew assembleRelease
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-hotspot-apk
+          path: app/build/outputs/apk/release/*.apk
